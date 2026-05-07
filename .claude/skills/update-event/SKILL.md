@@ -9,16 +9,34 @@ description: >
 
 # 予定更新・削除
 
-## 手順
+## 前提
 
-1. 対象イベントの特定：
-   - ユーザーの言及内容（タイトルや日時の断片）から検索
+このプロジェクトは Vercel Neon (PostgreSQL) を使用。すべての DB アクセスは `scripts/neon_client.sh` 経由で HTTP `/sql` エンドポイントを叩く。
+
+冒頭で必ず初期化：
 
 ```bash
-# タイトルで部分一致検索
-curl -s "${SUPABASE_URL}/rest/v1/speaking_events?title=ilike.*検索ワード*&order=start_at.asc" \
-  -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
-  -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}"
+set -a && source .env && set +a
+source scripts/neon_client.sh
+```
+
+## 手順
+
+1. 対象イベントの特定（タイトル / 日付の断片から検索）：
+
+```bash
+# タイトル ILIKE 部分一致
+neon_rows 'SELECT id, title, start_at, end_at, location, category
+           FROM speaking_events
+           WHERE title ILIKE $1
+           ORDER BY start_at ASC' '%検索ワード%'
+
+# 日付範囲フォールバック
+neon_rows 'SELECT id, title, start_at, end_at, location, category
+           FROM speaking_events
+           WHERE start_at >= $1 AND start_at <= $2
+           ORDER BY start_at ASC' \
+  '2026-04-01T00:00:00+09:00' '2026-04-30T23:59:59+09:00'
 ```
 
    - 候補が複数ある場合はリスト表示してユーザーに選択させる
@@ -27,29 +45,55 @@ curl -s "${SUPABASE_URL}/rest/v1/speaking_events?title=ilike.*検索ワード*&o
    - 変更前と変更後を並べて表示
    - ユーザーの承認を得る
 
-3. **日時変更の場合はコンフリクトチェック**（check_conflicts RPCにp_exclude_idで自身を除外）
+3. **日時変更の場合はコンフリクトチェック**（自身を除外）：
+
+```bash
+neon_rows 'SELECT * FROM check_conflicts($1, $2, $3::uuid)' \
+  '2026-04-09T11:30:00+09:00' '2026-04-09T13:30:00+09:00' \
+  'XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX'
+```
 
 4. **関連する移動ブロックの確認**：
-   - 対象予定の前後にcategory='travel'の予定があり、travel_to またはtravel_fromが対象予定のlocationと一致する場合、連動更新が必要か確認
+
+```bash
+# 対象予定の前後 24h で travel ブロックを取得
+neon_rows 'SELECT id, title, start_at, end_at, travel_from, travel_to
+           FROM speaking_events
+           WHERE category = '"'"'travel'"'"'
+             AND start_at BETWEEN ($1::timestamptz - interval '"'"'24 hours'"'"')
+                              AND ($2::timestamptz + interval '"'"'24 hours'"'"')
+             AND ($3 IS NULL OR travel_from = $3 OR travel_to = $3)
+           ORDER BY start_at' \
+  '2026-04-09T11:30:00+09:00' '2026-04-09T13:30:00+09:00' '札幌市'
+```
+
    - 場所が変わった場合 → 移動ブロックの更新/削除を提案
    - 日時が変わった場合 → 移動ブロックの時間調整を提案
    - キャンセルの場合 → 関連する移動ブロックも削除するか確認
 
-5. Supabase REST API で PATCH（更新）または DELETE（削除）
+5. UPDATE / DELETE 実行：
 
 ```bash
-# 更新
-curl -s -X PATCH "${SUPABASE_URL}/rest/v1/speaking_events?id=eq.{uuid}" \
-  -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
-  -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
-  -H "Content-Type: application/json" \
-  -H "Prefer: return=representation" \
-  -d '{"title": "新タイトル", "start_at": "..."}'
+# 単一カラム更新の例（タイトル変更）
+neon_rows 'UPDATE speaking_events
+           SET title = $1
+           WHERE id = $2::uuid
+           RETURNING id, title, start_at' \
+  '新タイトル' 'XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX'
+
+# 複数カラム同時更新（日時 + 場所）
+neon_rows 'UPDATE speaking_events
+           SET start_at = $1, end_at = $2, location = $3
+           WHERE id = $4::uuid
+           RETURNING id, title, start_at, end_at, location' \
+  '2026-04-09T13:00:00+09:00' '2026-04-09T15:00:00+09:00' '東京都' \
+  'XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX'
 
 # 削除
-curl -s -X DELETE "${SUPABASE_URL}/rest/v1/speaking_events?id=eq.{uuid}" \
-  -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
-  -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}"
+neon_rows 'DELETE FROM speaking_events
+           WHERE id = $1::uuid
+           RETURNING id, title' \
+  'XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX'
 ```
 
 6. 操作結果をサマリ表示
@@ -57,7 +101,9 @@ curl -s -X DELETE "${SUPABASE_URL}/rest/v1/speaking_events?id=eq.{uuid}" \
 ## Gotchas
 
 - 削除は取り消せないので必ず確認を取る
-- ilike検索は日本語でも動作する
+- ILIKE 検索は日本語でも動作する（`'%札幌%'` のように `%` で挟む）
 - 部分一致で見つからない場合は日付範囲での検索にフォールバック
 - category='travel' の予定を直接編集する場合は manage-travel スキルに案内する
-- Windows環境ではcurlの `-d` に日本語を直接渡すとエンコーディングエラーになる。日本語を含むJSONは一時ファイルに書き出して `-d @/tmp/req.json` で渡すこと
+- updated_at はトリガーで自動更新されるので明示的に SET しない
+- UUID は `$N::uuid` キャストが必要
+- パラメータ化（`$1, $2, ...`）を必ず使う。値を SQL 文字列結合しない

@@ -10,19 +10,32 @@ description: >
 
 # コンフリクト確認 & スケジュール一覧
 
+## 前提
+
+このプロジェクトは Vercel Neon (PostgreSQL) を使用。すべての DB アクセスは `scripts/neon_client.sh` 経由で HTTP `/sql` エンドポイントを叩く。
+
+冒頭で必ず初期化：
+
+```bash
+set -a && source .env && set +a
+source scripts/neon_client.sh
+```
+
 ## 手順
 
 1. 期間の特定：
    - ユーザーが期間を指定 → その範囲で検索
    - 未指定 → 今日から30日間をデフォルト
 
-2. 予定の取得：
+2. 予定の取得（移動ブロック含む）：
 
 ```bash
-# 期間指定で取得（移動ブロック含む）
-curl -s "${SUPABASE_URL}/rest/v1/speaking_events?start_at=gte.2026-04-01T00:00:00%2B09:00&start_at=lte.2026-04-30T23:59:59%2B09:00&order=start_at.asc" \
-  -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
-  -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}"
+neon_rows 'SELECT id, title, start_at, end_at, location, is_online, category,
+                  travel_from, travel_to, travel_mode, notes
+           FROM speaking_events
+           WHERE start_at >= $1 AND start_at <= $2
+           ORDER BY start_at ASC' \
+  '2026-04-01T00:00:00+09:00' '2026-04-30T23:59:59+09:00'
 ```
 
 3. コンフリクト分析（4種類）：
@@ -33,12 +46,18 @@ curl -s "${SUPABASE_URL}/rest/v1/speaking_events?start_at=gte.2026-04-01T00:00:0
    - **🔵 移動ブロック未登録**: 異なる都市間のオフライン予定が連続するのに、間にcategory='travel'の予定がない → 登録を推奨
 
 4. 移動ブロック未登録チェックのロジック：
-   - 予定をstart_at順に並べる
-   - 連続するオフライン予定（is_online=false かつ category!='travel'）のlocationが異なる場合
-   - 間にcategory='travel'の予定が存在するか確認
-   - 存在しない場合 → travel_routesから移動時間を取得し、🔵で報告
+   - 予定を start_at 順に並べる
+   - 連続するオフライン予定（is_online=false かつ category!='travel'）の location が異なる場合
+   - 間に category='travel' の予定が存在するか確認
+   - 存在しない場合 → travel_routes から移動時間を取得し、🔵で報告
 
-5. 出力フォーマット：
+5. 移動時間の取得（必要なペアごとに）：
+
+```bash
+neon_rows 'SELECT * FROM get_travel_time($1, $2)' '札幌市' '函館市'
+```
+
+6. 出力フォーマット：
 
 ```
 ## 📅 2026年4月のスケジュール（12件 + 移動2件）
@@ -66,14 +85,22 @@ curl -s "${SUPABASE_URL}/rest/v1/speaking_events?start_at=gte.2026-04-01T00:00:0
 | ...  | ... | ... | ... | ... |
 ```
 
-6. カテゴリ別の集計も表示：
-   - speaking: X件、lecture: X件、internal: X件、social: X件、travel: X件
+7. カテゴリ別の集計：
+
+```bash
+neon_rows 'SELECT category, COUNT(*) AS n
+           FROM speaking_events
+           WHERE start_at >= $1 AND start_at <= $2
+           GROUP BY category ORDER BY category' \
+  '2026-04-01T00:00:00+09:00' '2026-04-30T23:59:59+09:00'
+```
 
 ## Gotchas
 
+- DB に格納された TIMESTAMPTZ は UTC で返ってくる（例 `2026-04-09 02:30:00+00`）。表示時は JST(+09:00)に変換すること
 - オンライン予定同士のコンフリクトも警告する（同時参加は困難）
 - 移動距離チェックは `is_online = false` の予定のみ対象
 - category='travel' の予定は移動ブロックとして特別扱い（🚄アイコン表示）
 - 予定が0件の場合は「この期間に登録済みの予定はありません」と返す
 - 移動ブロック未登録の警告では、manage-travel スキルでの登録を案内する
-- Windows環境ではcurlの `-d` に日本語を直接渡すとエンコーディングエラーになる。日本語を含むJSONは一時ファイルに書き出して `-d @/tmp/req.json` で渡すこと
+- 大量の SQL を組み立てる場合は SQL injection を避けるためパラメータ化（`$1, $2, ...`）を必ず使う。値リテラルを文字列結合しない
