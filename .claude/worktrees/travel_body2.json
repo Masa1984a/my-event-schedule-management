@@ -1,0 +1,12 @@
+{
+  "title": "🚄 函館→札幌（北斗）",
+  "start_at": "2026-04-28T06:02:00+09:00",
+  "end_at": "2026-04-28T09:47:00+09:00",
+  "location": "移動中",
+  "is_online": false,
+  "category": "travel",
+  "travel_from": "函館市",
+  "travel_to": "札幌市",
+  "travel_mode": "train",
+  "notes": "函館6:02発 特急北斗 → 札幌9:47着"
+}
