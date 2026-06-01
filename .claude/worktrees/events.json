@@ -1,0 +1,9 @@
+[
+  {"title": "苫小牧高専授業登壇", "start_at": "2026-06-01T14:30:00+09:00", "end_at": "2026-06-01T16:15:00+09:00", "location": "苫小牧高専", "is_online": true, "category": "lecture", "notes": ""},
+  {"title": "苫小牧高専授業登壇", "start_at": "2026-06-08T14:30:00+09:00", "end_at": "2026-06-08T16:15:00+09:00", "location": "苫小牧高専", "is_online": true, "category": "lecture", "notes": ""},
+  {"title": "BluePrism長谷社長 AIH訪問", "start_at": "2026-06-08T17:00:00+09:00", "end_at": "2026-06-08T18:00:00+09:00", "location": "札幌市", "is_online": false, "category": "meeting", "notes": ""},
+  {"title": "BluePrism社会食", "start_at": "2026-06-08T18:30:00+09:00", "end_at": "2026-06-08T21:00:00+09:00", "location": "札幌市", "is_online": false, "category": "social", "notes": ""},
+  {"title": "苫小牧高専授業登壇", "start_at": "2026-06-15T14:30:00+09:00", "end_at": "2026-06-15T16:15:00+09:00", "location": "苫小牧高専", "is_online": true, "category": "lecture", "notes": ""},
+  {"title": "苫小牧高専授業登壇", "start_at": "2026-06-22T14:30:00+09:00", "end_at": "2026-06-22T16:15:00+09:00", "location": "苫小牧高専", "is_online": true, "category": "lecture", "notes": ""},
+  {"title": "苫小牧高専授業登壇", "start_at": "2026-06-29T14:30:00+09:00", "end_at": "2026-06-29T16:15:00+09:00", "location": "苫小牧高専", "is_online": true, "category": "lecture", "notes": ""}
+]

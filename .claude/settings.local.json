@@ -3,7 +3,8 @@
     "allow": [
       "Bash(source /c/schedule/.env)",
       "Bash(printf '{\"\"\"\"p_from\"\"\"\":\"\"\"\"札幌市\"\"\"\",\"\"\"\"p_to\"\"\"\":\"\"\"\"東京都\"\"\"\"}')",
-      "Bash(xxd)"
+      "Bash(xxd)",
+      "WebSearch"
     ]
   }
 }
